@@ -69,7 +69,7 @@ export interface UseSendMessageParams {
  */
 export interface SendMessageReturn {
 	/** 发送消息 */
-	sendMessage: (text: string, clearInput?: boolean) => Promise<void>;
+	sendMessage: (text: string, clearInput?: boolean, isProactive?: boolean) => Promise<void>;
 }
 
 /**
@@ -100,7 +100,7 @@ export const useSendMessage = ({
 	 * @param clearInput - 是否清空输入框
 	 */
 	const sendMessage = useCallback(
-		async (text: string, clearInput = false) => {
+		async (text: string, clearInput = false, isProactive = false) => {
 			const trimmedText = text.trim();
 			if (!trimmedText) return;
 
@@ -135,11 +135,12 @@ export const useSendMessage = ({
 				id: createId(),
 				role: "user",
 				content: trimmedText,
+				isProactive,
 			};
 			const assistantMessageId = createId();
 			const initialMessages: ChatMessage[] = [
 				userMessage,
-				{ id: assistantMessageId, role: "assistant", content: "" },
+				{ id: assistantMessageId, role: "assistant", content: "", isProactive },
 			];
 
 			setMessages((prev) => [...prev, ...initialMessages]);
@@ -206,6 +207,7 @@ export const useSendMessage = ({
 						mode: modeForBackend,
 						selectedTools: selectedAgnoTools,
 						externalTools: selectedExternalTools,
+						isProactive,
 					},
 					// onChunk 回调
 					(chunk) => {

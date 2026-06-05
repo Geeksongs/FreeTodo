@@ -24,7 +24,7 @@ export function ChatPanel() {
 		useTodoStore();
 
 	// 获取 pendingPrompt（其他组件触发的待发送消息）
-	const { pendingPrompt, pendingNewChat, setPendingPrompt } = useChatStore();
+	const { pendingPrompt, pendingNewChat, pendingIsProactive, setPendingPrompt } = useChatStore();
 
 	// 使用 Breakdown Questionnaire hook
 	const breakdownQuestionnaire = useBreakdownQuestionnaire();
@@ -50,9 +50,10 @@ export function ChatPanel() {
 			if (pendingNewChat) {
 				chatController.handleNewChat(true);
 			}
+			const isProactive = pendingIsProactive;
 			// 使用 setTimeout 确保新会话状态已更新后再发送消息
 			setTimeout(() => {
-				void chatController.sendMessage(pendingPrompt);
+				void chatController.sendMessage(pendingPrompt, false, isProactive);
 			}, 0);
 			// 清空 pendingPrompt，避免重复发送
 			setPendingPrompt(null);

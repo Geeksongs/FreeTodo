@@ -122,6 +122,7 @@ class ChatService:
         title: str | None = None,
         context_id: int | None = None,
         metadata: str | None = None,
+        is_proactive: bool = False,
     ) -> dict[str, Any] | None:
         """创建聊天会话（数据库）"""
         return self.repository.create_chat(
@@ -130,6 +131,7 @@ class ChatService:
             title=title,
             context_id=context_id,
             metadata=metadata,
+            is_proactive=is_proactive,
         )
 
     def get_chat_by_session_id(self, session_id: str) -> dict[str, Any] | None:
@@ -142,6 +144,7 @@ class ChatService:
         chat_type: str = "event",
         title: str | None = None,
         context_id: int | None = None,
+        is_proactive: bool = False,
     ) -> dict[str, Any] | None:
         """确保聊天会话存在，如果不存在则创建"""
         chat = self.repository.get_chat_by_session_id(session_id)
@@ -151,8 +154,9 @@ class ChatService:
                 chat_type=chat_type,
                 title=title,
                 context_id=context_id,
+                is_proactive=is_proactive,
             )
-            logger.info(f"在数据库中创建会话: {session_id}, 类型: {chat_type}")
+            logger.info(f"在数据库中创建会话: {session_id}, 类型: {chat_type}, 主动: {is_proactive}")
         return chat
 
     def list_chats(
@@ -226,6 +230,19 @@ class ChatService:
         )
 
     # ===== 历史记录 =====
+
+    def update_message_feedback(
+        self,
+        message_id: int,
+        feedback: str,
+        feedback_reason: str,
+    ) -> bool:
+        """更新消息的用户反馈"""
+        return self.repository.update_message_feedback(
+            message_id=message_id,
+            feedback=feedback,
+            feedback_reason=feedback_reason,
+        )
 
     def get_chat_history(
         self,

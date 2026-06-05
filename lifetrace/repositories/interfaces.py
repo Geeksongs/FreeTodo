@@ -19,6 +19,7 @@ class IChatRepository(ABC):
         title: str | None = None,
         context_id: int | None = None,
         metadata: str | None = None,
+        is_proactive: bool = False,
     ) -> dict[str, Any] | None:
         """创建聊天会话"""
         pass
@@ -92,15 +93,17 @@ class IChatRepository(ABC):
 
     @abstractmethod
     def update_chat_context(self, session_id: str, context: str) -> bool:
-        """更新会话上下文
+        """更新会话上下文"""
+        pass
 
-        Args:
-            session_id: 会话ID
-            context: JSON 格式的上下文字符串
-
-        Returns:
-            是否更新成功
-        """
+    @abstractmethod
+    def update_message_feedback(
+        self,
+        message_id: int,
+        feedback: str,
+        feedback_reason: str,
+    ) -> bool:
+        """更新消息的用户反馈（accept / reject）"""
         pass
 
 

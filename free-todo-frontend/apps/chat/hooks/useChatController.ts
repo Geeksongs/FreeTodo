@@ -150,7 +150,7 @@ export const useChatController = ({
 	}, [streamController]);
 
 	const handleSend = useCallback(async () => {
-		await sendMessage(inputValue, true);
+		await sendMessage(inputValue, true, false);
 	}, [sendMessage, inputValue]);
 
 	const handleKeyDown = useCallback(

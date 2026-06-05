@@ -241,11 +241,14 @@ export const useSessionManager = ({
 			prevConversationIdRef.current = conversationId;
 		}
 
+		const isProactive = sessionHistory[0]?.isProactive ?? false;
 		const mapped = sessionHistory.map((item: ChatHistoryItem) => ({
 			id: createId(),
 			role: item.role,
 			content: item.content,
 			toolCallSteps: parseToolEvents(item.extraData),
+			isProactive,
+			dbMessageId: item.id,
 		}));
 		setMessages(mapped);
 		isLoadingSessionRef.current = false;

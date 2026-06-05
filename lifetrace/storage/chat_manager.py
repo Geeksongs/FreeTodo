@@ -29,16 +29,9 @@ class ChatManager:
         title: str | None = None,
         context_id: int | None = None,
         metadata: str | None = None,
+        is_proactive: bool = False,
     ) -> dict[str, Any] | None:
-        """创建聊天会话
-
-        Args:
-            session_id: 会话ID（UUID）
-            chat_type: 聊天类型（event, project, general, task等）
-            title: 会话标题
-            context_id: 上下文ID（根据chat_type不同而不同）
-            metadata: JSON格式的元数据
-        """
+        """创建聊天会话"""
         try:
             with self.db_base.get_session() as session:
                 chat = Chat(
@@ -47,11 +40,12 @@ class ChatManager:
                     title=title,
                     context_id=context_id,
                     extra_data=metadata,
+                    is_proactive=is_proactive,
                 )
                 session.add(chat)
                 session.flush()
 
-                logger.info(f"创建聊天会话: {session_id}, 类型: {chat_type}")
+                logger.info(f"创建聊天会话: {session_id}, 类型: {chat_type}, 主动: {is_proactive}")
                 return {
                     "id": chat.id,
                     "session_id": chat.session_id,
@@ -59,6 +53,7 @@ class ChatManager:
                     "title": chat.title,
                     "context_id": chat.context_id,
                     "extra_data": chat.extra_data,
+                    "is_proactive": chat.is_proactive,
                     "created_at": chat.created_at,
                     "updated_at": chat.updated_at,
                     "last_message_at": chat.last_message_at,
@@ -80,6 +75,7 @@ class ChatManager:
                         "title": chat.title,
                         "context_id": chat.context_id,
                         "extra_data": chat.extra_data,
+                        "is_proactive": chat.is_proactive,
                         "created_at": chat.created_at,
                         "updated_at": chat.updated_at,
                         "last_message_at": chat.last_message_at,
@@ -286,6 +282,8 @@ class ChatManager:
                         "token_count": m.token_count,
                         "model": m.model,
                         "extra_data": m.extra_data,
+                        "feedback": m.feedback,
+                        "feedback_reason": m.feedback_reason,
                         "created_at": m.created_at,
                     }
                     for m in messages
@@ -374,6 +372,28 @@ class ChatManager:
         except SQLAlchemyError as e:
             logger.error(f"获取会话上下文失败: {e}")
             return None
+
+    def update_message_feedback(
+        self,
+        message_id: int,
+        feedback: str,
+        feedback_reason: str,
+    ) -> bool:
+        """更新消息的用户反馈"""
+        try:
+            with self.db_base.get_session() as session:
+                message = session.query(Message).filter_by(id=message_id).first()
+                if not message:
+                    logger.warning(f"消息不存在: {message_id}")
+                    return False
+                message.feedback = feedback
+                message.feedback_reason = feedback_reason
+                session.flush()
+                logger.info(f"更新消息反馈: message_id={message_id}, feedback={feedback}")
+                return True
+        except SQLAlchemyError as e:
+            logger.error(f"更新消息反馈失败: {e}")
+            return False
 
     def update_chat_context(self, session_id: str, context: str) -> bool:
         """更新会话上下文

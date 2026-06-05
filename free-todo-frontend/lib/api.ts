@@ -21,6 +21,7 @@ export interface SendChatParams {
 	mode?: string;
 	selectedTools?: string[];
 	externalTools?: string[];
+	isProactive?: boolean;
 }
 
 /**
@@ -125,6 +126,7 @@ export async function sendChatMessageStream(
 			mode: params.mode,
 			selected_tools: params.selectedTools,
 			external_tools: params.externalTools,
+			is_proactive: params.isProactive ?? false,
 		};
 		console.log("[sendChatMessageStream] Request body:", requestBody);
 
@@ -381,14 +383,37 @@ export type ChatHistoryItem = {
 	content: string;
 	timestamp?: string;
 	extraData?: string;
+	id?: number;
+	isProactive?: boolean;
+	feedback?: string;
+	feedbackReason?: string;
 };
 
 export type ChatHistoryResponse = {
 	sessions?: ChatSessionSummary[];
 	history?: ChatHistoryItem[];
+	isProactive?: boolean;
 };
 
 // ============================================================================
 // 注：通知相关的 API（fetchNotification、deleteNotification）已被 Orval 生成的 API 替换
 // 请直接使用 @/lib/generated/notifications/notifications 中的函数
 // ============================================================================
+
+export async function saveMessageFeedback(
+	sessionId: string,
+	messageId: number,
+	feedback: "accept" | "reject",
+	feedbackReason: string,
+): Promise<void> {
+	const baseUrl = getStreamApiBaseUrl();
+	const url = `${baseUrl}/api/chat/session/${sessionId}/messages/${messageId}/feedback`;
+	const response = await fetch(url, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ feedback, feedback_reason: feedbackReason }),
+	});
+	if (!response.ok) {
+		throw new Error(`Failed to save feedback: ${response.status}`);
+	}
+}

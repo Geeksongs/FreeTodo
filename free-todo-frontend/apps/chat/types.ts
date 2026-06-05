@@ -34,6 +34,10 @@ export type ChatMessage = {
 	content: string;
 	/** 工具调用步骤（仅 assistant 消息可能有） */
 	toolCallSteps?: ToolCallStep[];
+	/** 是否来自主动提示会话（整个 session 级别标记） */
+	isProactive?: boolean;
+	/** 数据库消息 ID，用于提交反馈 */
+	dbMessageId?: number;
 };
 
 export type ChatMode = "agno";

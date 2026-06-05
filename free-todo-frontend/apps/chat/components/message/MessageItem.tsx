@@ -3,6 +3,8 @@ import { useTranslations } from "next-intl";
 import { useState } from "react";
 import type { ExtractionState } from "@/apps/chat/hooks/useMessageExtraction";
 import type { ChatMessage } from "@/apps/chat/types";
+import { saveMessageFeedback } from "@/lib/api";
+import { useChatStore } from "@/lib/store/chat-store";
 import { cn } from "@/lib/utils";
 import { MessageContent } from "./MessageContent";
 import { MessageTodoExtractionPanel } from "./MessageTodoExtractionPanel";
@@ -13,6 +15,8 @@ import {
 	removeToolCalls,
 	removeToolEvents,
 } from "./utils/messageContentUtils";
+
+type FeedbackValue = "accept" | "reject" | null;
 
 type MessageItemProps = {
 	message: ChatMessage;
@@ -37,6 +41,11 @@ export function MessageItem({
 }: MessageItemProps) {
 	const tContextMenu = useTranslations("contextMenu");
 	const [hovered, setHovered] = useState(false);
+	const [feedback, setFeedback] = useState<FeedbackValue>(null);
+	const [reason, setReason] = useState("");
+	const [saving, setSaving] = useState(false);
+	const [saved, setSaved] = useState(false);
+	const { conversationId } = useChatStore();
 
 	const sanitizedContent = message.content
 		? removeToolEvents(message.content)
@@ -183,6 +192,86 @@ export function MessageItem({
 							<MessageContent message={message} />
 						</div>
 					</div>
+				</div>
+			)}
+			{/* Accept / Reject 反馈区 - 仅主动提示会话的 assistant 非 streaming 消息显示 */}
+			{message.isProactive && isAssistantMessageWithContent && !isStreaming && (
+				<div className="max-w-[80%] mt-2 flex flex-col gap-2">
+					{saved ? (
+						<p className="text-xs text-muted-foreground">
+							{feedback === "accept" ? "✓ 已接受" : "✗ 已拒绝"} — 反馈已保存
+						</p>
+					) : (
+						<>
+							<div className="flex gap-2">
+								<button
+									type="button"
+									disabled={saving}
+									onClick={() => {
+										setFeedback(feedback === "accept" ? null : "accept");
+										setReason("");
+									}}
+									className={cn(
+										"flex-1 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors",
+										feedback === "accept"
+											? "border-emerald-500 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+											: "border-border bg-background text-muted-foreground hover:border-emerald-400 hover:text-emerald-600",
+									)}
+								>
+									✓ Accept
+								</button>
+								<button
+									type="button"
+									disabled={saving}
+									onClick={() => {
+										setFeedback(feedback === "reject" ? null : "reject");
+										setReason("");
+									}}
+									className={cn(
+										"flex-1 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors",
+										feedback === "reject"
+											? "border-orange-500 bg-orange-500/10 text-orange-600 dark:text-orange-400"
+											: "border-border bg-background text-muted-foreground hover:border-orange-400 hover:text-orange-600",
+									)}
+								>
+									✗ Reject
+								</button>
+							</div>
+							{feedback && (
+								<input
+									type="text"
+									value={reason}
+									disabled={saving}
+									onChange={(e) => setReason(e.target.value)}
+									onKeyDown={async (e) => {
+										if (e.key !== "Enter") return;
+										const trimmed = reason.trim();
+										if (!trimmed || !message.dbMessageId || !conversationId) return;
+										setSaving(true);
+										try {
+											await saveMessageFeedback(
+												conversationId,
+												message.dbMessageId,
+												feedback,
+												trimmed,
+											);
+											setSaved(true);
+										} catch (err) {
+											console.error("保存反馈失败", err);
+										} finally {
+											setSaving(false);
+										}
+									}}
+									placeholder={
+										feedback === "accept"
+											? "输入接受原因后按 Enter 保存..."
+											: "输入拒绝原因后按 Enter 保存..."
+									}
+									className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/60 focus:border-primary/50 focus:outline-none disabled:opacity-50"
+								/>
+							)}
+						</>
+					)}
 				</div>
 			)}
 			{/* 提取待办面板 - 显示在消息下方 */}

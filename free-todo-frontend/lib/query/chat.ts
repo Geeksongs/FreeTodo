@@ -8,6 +8,7 @@ import { queryKeys } from "./keys";
 interface ChatHistoryResponse {
 	sessions?: Array<{ id: string; [key: string]: unknown }>;
 	history?: Array<{ [key: string]: unknown }>;
+	isProactive?: boolean;
 }
 
 // ============================================================================
@@ -69,9 +70,10 @@ export function useChatSessions(options?: {
 /**
  * 将历史记录数据转换为 ChatHistoryItem 类型
  */
-function mapHistoryItem(item: {
-	[key: string]: unknown;
-}): ChatHistoryItem | null {
+function mapHistoryItem(
+	item: { [key: string]: unknown },
+	isProactive: boolean,
+): ChatHistoryItem | null {
 	if (
 		typeof item.role !== "string" ||
 		(item.role !== "user" && item.role !== "assistant") ||
@@ -85,6 +87,10 @@ function mapHistoryItem(item: {
 		content: item.content,
 		timestamp: typeof item.timestamp === "string" ? item.timestamp : undefined,
 		extraData: typeof item.extraData === "string" ? item.extraData : undefined,
+		id: typeof item.id === "number" ? item.id : undefined,
+		isProactive,
+		feedback: typeof item.feedback === "string" ? item.feedback : undefined,
+		feedbackReason: typeof item.feedbackReason === "string" ? item.feedbackReason : undefined,
 	};
 }
 
@@ -110,8 +116,9 @@ export function useChatHistory(
 				select: (data: unknown) => {
 					// 返回消息历史，转换为 ChatHistoryItem[]
 					const response = data as ChatHistoryResponse;
+					const isProactive = response?.isProactive ?? false;
 					return (response?.history ?? [])
-						.map(mapHistoryItem)
+						.map((item) => mapHistoryItem(item, isProactive))
 						.filter((item): item is ChatHistoryItem => item !== null);
 				},
 			},

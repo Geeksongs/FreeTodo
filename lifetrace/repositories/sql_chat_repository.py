@@ -24,6 +24,7 @@ class SqlChatRepository(IChatRepository):
         title: str | None = None,
         context_id: int | None = None,
         metadata: str | None = None,
+        is_proactive: bool = False,
     ) -> dict[str, Any] | None:
         return self._manager.create_chat(
             session_id=session_id,
@@ -31,6 +32,7 @@ class SqlChatRepository(IChatRepository):
             title=title,
             context_id=context_id,
             metadata=metadata,
+            is_proactive=is_proactive,
         )
 
     def get_chat_by_session_id(self, session_id: str) -> dict[str, Any] | None:
@@ -102,3 +104,15 @@ class SqlChatRepository(IChatRepository):
 
     def update_chat_context(self, session_id: str, context: str) -> bool:
         return self._manager.update_chat_context(session_id, context)
+
+    def update_message_feedback(
+        self,
+        message_id: int,
+        feedback: str,
+        feedback_reason: str,
+    ) -> bool:
+        return self._manager.update_message_feedback(
+            message_id=message_id,
+            feedback=feedback,
+            feedback_reason=feedback_reason,
+        )

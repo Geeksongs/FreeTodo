@@ -6,9 +6,10 @@ interface ChatStoreState {
 	historyOpen: boolean;
 	pendingPrompt: string | null; // 待发送的预设消息（由其他组件触发）
 	pendingNewChat: boolean; // 是否需要先开启新会话再发送消息
+	pendingIsProactive: boolean; // 待发送消息是否为主动提示会话
 	setConversationId: (id: string | null) => void;
 	setHistoryOpen: (open: boolean) => void;
-	setPendingPrompt: (prompt: string | null, startNewChat?: boolean) => void;
+	setPendingPrompt: (prompt: string | null, startNewChat?: boolean, isProactive?: boolean) => void;
 }
 
 export const useChatStore = create<ChatStoreState>()(
@@ -18,10 +19,11 @@ export const useChatStore = create<ChatStoreState>()(
 			historyOpen: false,
 			pendingPrompt: null,
 			pendingNewChat: false,
+			pendingIsProactive: false,
 			setConversationId: (id) => set({ conversationId: id }),
 			setHistoryOpen: (open) => set({ historyOpen: open }),
-			setPendingPrompt: (prompt, startNewChat = false) =>
-				set({ pendingPrompt: prompt, pendingNewChat: startNewChat }),
+			setPendingPrompt: (prompt, startNewChat = false, isProactive = false) =>
+				set({ pendingPrompt: prompt, pendingNewChat: startNewChat, pendingIsProactive: isProactive }),
 		}),
 		{
 			name: "chat-config",

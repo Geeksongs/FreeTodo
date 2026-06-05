@@ -319,6 +319,7 @@ class Chat(TimestampMixin, table=True):
     extra_data: str | None = Field(default=None, sa_column=Column(Text))  # 额外数据（JSON格式）
     context: str | None = Field(default=None, sa_column=Column(Text))  # 会话上下文（JSON格式）
     last_message_at: datetime | None = None  # 最后一条消息的时间
+    is_proactive: bool = Field(default=False)  # 是否为主动提示会话
 
     def __repr__(self):
         return f"<Chat(id={self.id}, session_id={self.session_id}, type={self.chat_type})>"
@@ -336,6 +337,8 @@ class Message(TimestampMixin, table=True):
     token_count: int | None = None  # token数量
     model: str | None = Field(default=None, max_length=100)  # 使用的模型名称
     extra_data: str | None = Field(default=None, sa_column=Column(Text))  # 额外数据
+    feedback: str | None = Field(default=None, max_length=20)  # 用户反馈：accept / reject
+    feedback_reason: str | None = Field(default=None, sa_column=Column(Text))  # 反馈理由
 
     def __repr__(self):
         return f"<Message(id={self.id}, chat_id={self.chat_id}, role={self.role})>"

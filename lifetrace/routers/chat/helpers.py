@@ -30,6 +30,7 @@ def ensure_stream_session(message: ChatMessage, chat_service: ChatService) -> st
             session_id=session_id,
             chat_type=chat_type,
             title=title,
+            is_proactive=getattr(message, "is_proactive", False),
         )
         logger.info(f"[stream] 在数据库中创建会话: {session_id}, 类型: {chat_type}")
 

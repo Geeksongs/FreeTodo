@@ -3,6 +3,7 @@
 import importlib
 
 from fastapi import Depends, HTTPException, Query
+from pydantic import BaseModel
 
 from lifetrace.core.dependencies import get_chat_service, get_rag_service
 from lifetrace.schemas.chat import AddMessageRequest, NewChatRequest, NewChatResponse
@@ -10,6 +11,11 @@ from lifetrace.services.chat_service import ChatService
 from lifetrace.util.time_utils import get_utc_now
 
 from .base import logger, router
+
+
+class MessageFeedbackRequest(BaseModel):
+    feedback: str  # "accept" | "reject"
+    feedback_reason: str
 
 
 @router.post("/new", response_model=NewChatResponse)
@@ -98,10 +104,43 @@ async def get_chat_history(
 ):
     """获取聊天历史记录（从数据库读取）"""
     try:
-        return chat_service.get_chat_history(session_id=session_id, chat_type=chat_type)
+        result = chat_service.get_chat_history(session_id=session_id, chat_type=chat_type)
+        # 如果是单个会话的历史，附加 is_proactive 信息
+        if session_id and isinstance(result, dict):
+            chat = chat_service.get_chat_by_session_id(session_id)
+            result["is_proactive"] = chat.get("is_proactive", False) if chat else False
+        return result
     except Exception as e:
         logger.error(f"获取聊天历史失败: {e}")
         raise HTTPException(status_code=500, detail="获取聊天历史失败") from e
+
+
+@router.post("/session/{session_id}/messages/{message_id}/feedback")
+async def save_message_feedback(
+    session_id: str,
+    message_id: int,
+    request: MessageFeedbackRequest,
+    chat_service: ChatService = Depends(get_chat_service),
+):
+    """保存主动提示消息的用户反馈（accept / reject + 理由）"""
+    if request.feedback not in ("accept", "reject"):
+        raise HTTPException(status_code=400, detail="feedback 必须为 accept 或 reject")
+    if not request.feedback_reason.strip():
+        raise HTTPException(status_code=400, detail="feedback_reason 不能为空")
+    try:
+        success = chat_service.update_message_feedback(
+            message_id=message_id,
+            feedback=request.feedback,
+            feedback_reason=request.feedback_reason.strip(),
+        )
+        if not success:
+            raise HTTPException(status_code=404, detail="消息不存在")
+        return {"success": True, "message_id": message_id, "feedback": request.feedback}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"保存消息反馈失败: {e}")
+        raise HTTPException(status_code=500, detail="保存消息反馈失败") from e
 
 
 @router.get("/suggestions")
