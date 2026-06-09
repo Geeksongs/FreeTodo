@@ -415,9 +415,9 @@ async def get_llm_status():
         dict: 包含 configured 字段，表示 LLM 是否已配置且连接验证成功
     """
     try:
-        # 只有配置存在且连接验证成功才返回 True
+        # 只要配置存在（api_key/model 已填写）即视为已配置，不依赖连接测试结果
         has_config = is_llm_configured()
-        return {"configured": has_config and _llm_connection_state["verified"]}
+        return {"configured": has_config}
     except Exception as e:
         logger.error(f"检查 LLM 配置状态失败: {e}")
         return {"configured": False}
