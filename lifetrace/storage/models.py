@@ -108,6 +108,7 @@ class Todo(TimestampMixin, table=True):
     summary: str | None = Field(default=None, max_length=200)  # iCalendar SUMMARY
     description: str | None = Field(default=None, sa_column=Column(Text))  # 描述
     user_notes: str | None = Field(default=None, sa_column=Column(Text))  # 用户笔记
+    rejection_reason: str | None = Field(default=None, sa_column=Column(Text))  # 拒绝原因
     parent_todo_id: int | None = None  # 父级待办ID（自关联）
     item_type: str = Field(default="VTODO", max_length=10)  # iCalendar VTODO/VEVENT
     location: str | None = Field(default=None, max_length=200)  # iCalendar LOCATION
