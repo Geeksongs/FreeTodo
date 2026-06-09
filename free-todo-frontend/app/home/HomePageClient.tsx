@@ -74,30 +74,25 @@ export default function HomePageClient() {
 	// 检查 LLM 配置状态
 	const { data: llmStatus } = useLlmStatus();
 
-	// 根据 LLM 配置状态显示或隐藏通知
-	const hasLlmConfigNotification = notifications.some(
-		(notification) => notification.source === "llm-config",
-	);
-
 	useEffect(() => {
 		if (!llmStatus) return;
 
 		if (!llmStatus.configured) {
-			// LLM 未配置，显示通知提示用户去设置
-			if (!hasLlmConfigNotification) {
-				upsertNotification({
-					id: "llm-config-missing",
-					title: t("llmConfigMissing"),
-					content: t("llmConfigMissingHint"),
-					timestamp: new Date().toISOString(),
-					source: "llm-config",
-				});
-			}
-		} else if (hasLlmConfigNotification) {
+			// LLM 未配置，显示通知提示用户去设置（upsert 保证不重复添加）
+			upsertNotification({
+				id: "llm-config-missing",
+				title: t("llmConfigMissing"),
+				content: t("llmConfigMissingHint"),
+				timestamp: new Date().toISOString(),
+				source: "llm-config",
+			});
+		} else {
 			// LLM 已配置，清除提示通知
 			removeNotificationsBySource("llm-config");
 		}
-	}, [llmStatus, hasLlmConfigNotification, removeNotificationsBySource, t, upsertNotification]);
+		// 故意不把 hasLlmConfigNotification 放入依赖，避免用户关闭通知后循环重新添加
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [llmStatus?.configured, removeNotificationsBySource, t, upsertNotification]);
 
 	const containerRef = useRef<HTMLDivElement | null>(null);
 	const setGlobalResizeCursor = useCallback((enabled: boolean) => {
