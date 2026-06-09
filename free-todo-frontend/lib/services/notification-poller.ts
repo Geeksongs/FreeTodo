@@ -20,6 +20,12 @@ interface NotificationResponse {
 class NotificationPoller {
 	private timers: Map<string, NodeJS.Timeout> = new Map();
 	private isPageVisible: boolean = true;
+	// 用户已处理（accept/reject）的 todo ID，轮询时跳过，避免 API 写入前通知重新出现
+	private processedTodoIds: Set<number> = new Set();
+
+	markTodoProcessed(todoId: number): void {
+		this.processedTodoIds.add(todoId);
+	}
 
 	constructor() {
 		// 监听页面可见性变化
@@ -147,7 +153,8 @@ class NotificationPoller {
 				offset: 0,
 			});
 			const data = unwrapApiData<TodoListResponse>(result);
-			const todos = data?.todos ?? [];
+			// 过滤掉用户已处理（accept/reject）的 todo，避免写入完成前通知重现
+			const todos = (data?.todos ?? []).filter((t) => !this.processedTodoIds.has(t.id));
 
 			const store = useNotificationStore.getState();
 			const current = store.notifications.find(
