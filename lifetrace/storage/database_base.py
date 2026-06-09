@@ -43,8 +43,17 @@ class DatabaseBase:
             # 确保数据库目录存在
             ensure_dir(os.path.dirname(db_path))
 
-            # 创建引擎
-            self.engine = create_engine("sqlite:///" + db_path, echo=False, pool_pre_ping=True)
+            # 创建引擎（WAL 模式允许读写并发，避免 OCR 写锁阻塞 API）
+            self.engine = create_engine(
+                "sqlite:///" + db_path,
+                echo=False,
+                pool_pre_ping=True,
+                connect_args={"check_same_thread": False, "timeout": 10},
+            )
+            with self.engine.connect() as _conn:
+                _conn.execute(text("PRAGMA journal_mode=WAL"))
+                _conn.execute(text("PRAGMA synchronous=NORMAL"))
+                _conn.commit()
 
             # 创建会话工厂（兼容旧代码）
             self.SessionLocal = sessionmaker(bind=self.engine)
