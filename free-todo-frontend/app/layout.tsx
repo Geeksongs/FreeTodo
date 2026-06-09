@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getMessages } from "next-intl/server";
 import { ThemeProvider } from "@/components/common/theme/ThemeProvider";
+import { AudioRecordingInit } from "@/components/common/ui/AudioRecordingInit";
 import { BackendReadyGate } from "@/components/common/ui/BackendReadyGate";
 import { CapabilitiesSync } from "@/components/common/ui/CapabilitiesSync";
 import { DockTriggerZone } from "@/components/common/ui/DockTriggerZone";
@@ -33,6 +34,7 @@ export default async function RootLayout({ children }: RootLayoutProps) {
 				<ScrollbarController />
 				<QueryProvider>
 					<NextIntlClientProvider messages={messages}>
+						<AudioRecordingInit />
 						<LocaleSync />
 						<CapabilitiesSync />
 						<DockTriggerZone />
