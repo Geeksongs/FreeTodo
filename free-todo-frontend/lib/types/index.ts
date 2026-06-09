@@ -26,6 +26,7 @@ export interface Todo {
 	summary?: string;
 	description?: string;
 	userNotes?: string;
+	rejectionReason?: string;
 	parentTodoId?: number | null;
 	itemType?: string;
 	location?: string;
@@ -111,6 +112,7 @@ export interface UpdateTodoInput {
 	summary?: string;
 	description?: string;
 	userNotes?: string;
+	rejectionReason?: string | null;
 	status?: TodoStatus;
 	priority?: TodoPriority;
 	itemType?: string;

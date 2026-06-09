@@ -59,6 +59,7 @@ function normalizeTodo(raw: Record<string, unknown>): Todo {
 		summary: (raw.summary as string) ?? undefined,
 		description: (raw.description as string) ?? undefined,
 		userNotes: (raw.userNotes as string) ?? undefined,
+		rejectionReason: (raw.rejectionReason as string) ?? undefined,
 		status: normalizeStatus(raw.status),
 		priority: normalizePriority(raw.priority),
 		itemType: (raw.itemType as string) ?? undefined,

@@ -69,6 +69,8 @@ export function HeaderIsland() {
 	const tLayout = useTranslations("layout");
 	const containerRef = useRef<HTMLDivElement>(null);
 	const [currentTime, setCurrentTime] = useState(() => formatCurrentTime(t));
+	const [rejectReason, setRejectReason] = useState<Record<string, string>>({});
+	const [showRejectReason, setShowRejectReason] = useState<Record<string, boolean>>({});
 	const updateTodoMutation = useUpdateTodo();
 	const isProcessing = updateTodoMutation.isPending;
 
@@ -131,6 +133,17 @@ export function HeaderIsland() {
 		}
 	};
 
+	const classifyError = (error: unknown): string => {
+		const msg = error instanceof Error ? error.message : String(error);
+		if (msg.includes("Failed to fetch") || msg.includes("NetworkError") || msg.includes("fetch")) {
+			return "network";
+		}
+		if (msg.includes("404") || msg.includes("Not Found") || msg.includes("不存在")) {
+			return "not_found";
+		}
+		return msg;
+	};
+
 	// 同意 draft todo
 	const handleAccept = async (
 		todoId: number | undefined,
@@ -148,18 +161,17 @@ export function HeaderIsland() {
 			removeNotificationsBySource("draft-todos");
 			setExpanded(false);
 		} catch (error) {
-			const errorMsg = error instanceof Error ? error.message : String(error);
-			// 如果是 404 错误（todo 已被删除），静默关闭通知
-			if (
-				errorMsg.includes("404") ||
-				errorMsg.includes("Not Found") ||
-				errorMsg.includes("不存在")
-			) {
+			const kind = classifyError(error);
+			if (kind === "not_found") {
 				removeNotificationsBySource("draft-todos");
 				setExpanded(false);
 				return;
 			}
-			toastError(t("acceptFailed", { error: errorMsg }));
+			if (kind === "network") {
+				toastError("后端服务器暂时繁忙，请稍后再试");
+				return;
+			}
+			toastError(t("acceptFailed", { error: kind }));
 		}
 	};
 
@@ -167,6 +179,7 @@ export function HeaderIsland() {
 	const handleReject = async (
 		todoId: number | undefined,
 		e: React.MouseEvent,
+		reason?: string,
 	) => {
 		e.stopPropagation();
 		if (!todoId || isProcessing) return;
@@ -174,24 +187,28 @@ export function HeaderIsland() {
 		try {
 			await updateTodoMutation.mutateAsync({
 				id: todoId,
-				input: { status: "canceled" },
+				input: {
+					status: "canceled",
+					...(reason?.trim() ? { rejectionReason: reason.trim() } : {}),
+				},
 			});
 			toastSuccess(t("rejectSuccess"));
+			setRejectReason((prev) => { const n = { ...prev }; delete n[String(todoId)]; return n; });
+			setShowRejectReason((prev) => { const n = { ...prev }; delete n[String(todoId)]; return n; });
 			removeNotificationsBySource("draft-todos");
 			setExpanded(false);
 		} catch (error) {
-			const errorMsg = error instanceof Error ? error.message : String(error);
-			// 如果是 404 错误（todo 已被删除），静默关闭通知
-			if (
-				errorMsg.includes("404") ||
-				errorMsg.includes("Not Found") ||
-				errorMsg.includes("不存在")
-			) {
+			const kind = classifyError(error);
+			if (kind === "not_found") {
 				removeNotificationsBySource("draft-todos");
 				setExpanded(false);
 				return;
 			}
-			toastError(t("rejectFailed", { error: errorMsg }));
+			if (kind === "network") {
+				toastError("后端服务器暂时繁忙，请稍后再试");
+				return;
+			}
+			toastError(t("rejectFailed", { error: kind }));
 		}
 	};
 
@@ -368,7 +385,8 @@ export function HeaderIsland() {
 													</motion.button>
 												)}
 												{isDraftTodo && (
-													<div className="flex items-center gap-2 shrink-0 border-l border-border/50 pl-3">
+													<div className="flex flex-col gap-2 shrink-0 border-l border-border/50 pl-3">
+														<div className="flex items-center gap-2">
 														<motion.button
 															type="button"
 															onClick={(e) =>
@@ -403,9 +421,15 @@ export function HeaderIsland() {
 															</motion.button>
 														<motion.button
 															type="button"
-															onClick={(e) =>
-															handleReject(notification.todoId, e)
-														}
+															onClick={(e) => {
+																e.stopPropagation();
+																const key = String(notification.todoId);
+																if (showRejectReason[key]) {
+																	handleReject(notification.todoId, e, rejectReason[key]);
+																} else {
+																	setShowRejectReason((prev) => ({ ...prev, [key]: true }));
+																}
+															}}
 															disabled={isProcessing}
 															whileHover={!isProcessing ? { scale: 1.05 } : {}}
 															whileTap={!isProcessing ? { scale: 0.95 } : {}}
@@ -429,11 +453,41 @@ export function HeaderIsland() {
 																) : (
 																	<>
 																		<X className="h-4 w-4" />
-																		<span>{t("reject")}</span>
+																		<span>{showRejectReason[String(notification.todoId)] ? "确认拒绝" : t("reject")}</span>
 																	</>
 																)}
 															</motion.button>
 													</div>
+													{showRejectReason[String(notification.todoId)] && (
+														<input
+															type="text"
+															placeholder="输入拒绝原因（可选），回车确认"
+															value={rejectReason[String(notification.todoId)] ?? ""}
+															onClick={(e) => e.stopPropagation()}
+															onChange={(e) => {
+																const key = String(notification.todoId);
+																setRejectReason((prev) => ({ ...prev, [key]: e.target.value }));
+															}}
+															onKeyDown={(e) => {
+																if (e.key === "Enter") {
+																	e.stopPropagation();
+																	const key = String(notification.todoId);
+																	handleReject(
+																		notification.todoId,
+																		e as unknown as React.MouseEvent,
+																		rejectReason[key],
+																	);
+																} else if (e.key === "Escape") {
+																	e.stopPropagation();
+																	const key = String(notification.todoId);
+																	setShowRejectReason((prev) => { const n = { ...prev }; delete n[key]; return n; });
+																	setRejectReason((prev) => { const n = { ...prev }; delete n[key]; return n; });
+																}
+															}}
+															className="w-full rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
+														/>
+													)}
+												</div>
 												)}
 												<motion.button
 													type="button"
