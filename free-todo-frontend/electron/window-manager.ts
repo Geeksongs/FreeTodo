@@ -3,13 +3,18 @@
  * 封装 BrowserWindow 创建和事件处理
  */
 
+import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
-import { app, BrowserWindow, dialog } from "electron";
+import { app, BrowserWindow, dialog, nativeImage, type WebContents } from "electron";
 import {
 	WINDOW_CONFIG,
 } from "./config";
 import { logger } from "./logger";
+
+const ZOOM_STEP = 0.1;
+const ZOOM_MIN = 0.3;
+const ZOOM_MAX = 3.0;
 
 /**
  * 窗口管理器类
@@ -25,6 +30,61 @@ export class WindowManager {
 		width: number;
 		height: number;
 	} | null = null;
+	/**
+	 * 是否处于"真正退出"状态。
+	 *
+	 * 默认情况下点右上角关闭按钮只把窗口 hide 到托盘，不让它真的 closed；
+	 * 只有当 main.ts 在 `app.on("before-quit")` 中显式 setQuitting(true) 之后，
+	 * close 事件才会放行让窗口真正销毁。这样保证：托盘"退出"/Ctrl+C/系统关机
+	 * 都能正常 quit，但用户点 X 不会误关后台。
+	 */
+	private isQuitting = false;
+
+	/**
+	 * 为 webContents 绑定 Ctrl+=/Ctrl+-/Ctrl+0 缩放快捷键
+	 */
+	private setupZoomShortcuts(contents: WebContents): void {
+		contents.on("before-input-event", (_event, input) => {
+			if (!input.control && !input.meta) return;
+			if (input.type !== "keyDown") return;
+
+			const current = contents.getZoomFactor();
+
+			if (input.key === "=" || input.key === "+") {
+				contents.setZoomFactor(Math.min(current + ZOOM_STEP, ZOOM_MAX));
+				_event.preventDefault();
+			} else if (input.key === "-") {
+				contents.setZoomFactor(Math.max(current - ZOOM_STEP, ZOOM_MIN));
+				_event.preventDefault();
+			} else if (input.key === "0") {
+				contents.setZoomFactor(1.0);
+				_event.preventDefault();
+			}
+		});
+	}
+
+	/**
+	 * 获取应用图标（用于窗口标题栏和任务栏）
+	 */
+	private getAppIcon(): Electron.NativeImage | undefined {
+		const candidates = [
+			path.join(__dirname, "..", "public", "logo.png"),
+			app.isPackaged ? path.join(process.resourcesPath, "standalone", "public", "logo.png") : "",
+			app.isPackaged ? path.join(process.resourcesPath, "logo.png") : "",
+		].filter(Boolean);
+
+		for (const iconPath of candidates) {
+			try {
+				if (!fs.existsSync(iconPath)) continue;
+				const buffer = fs.readFileSync(iconPath);
+				const img = nativeImage.createFromBuffer(buffer);
+				if (!img.isEmpty()) return img;
+			} catch {
+				// skip to next candidate
+			}
+		}
+		return undefined;
+	}
 
 	/**
 	 * 获取 preload 脚本路径
@@ -101,29 +161,84 @@ export class WindowManager {
 			};
 		}
 
+		const isWin = process.platform === "win32";
+
 		this.mainWindow = new BrowserWindow({
 			width: WINDOW_CONFIG.width,
 			height: WINDOW_CONFIG.height,
-			x: 0,
-			y: 0,
 			minWidth: WINDOW_CONFIG.minWidth,
 			minHeight: WINDOW_CONFIG.minHeight,
-			frame: true,
+			autoHideMenuBar: true,
+			frame: !isWin,
 			transparent: false,
 			alwaysOnTop: false,
 			hasShadow: true,
 			resizable: true,
 			movable: true,
 			skipTaskbar: false,
+			icon: this.getAppIcon(),
 			webPreferences: {
 				nodeIntegration: false,
 				contextIsolation: true,
 				preload: preloadPath,
+				// 启用 <webview> 标签以支持内置浏览器面板（apps/browser）。
+				// 内置浏览器使用 partition="persist:browser" 持久化登录态。
+				webviewTag: true,
 			},
-			show: false, // 等待内容加载完成再显示
+			show: false,
 			backgroundColor: WINDOW_CONFIG.backgroundColor,
 		});
 
+
+		this.setupZoomShortcuts(this.mainWindow.webContents);
+
+		// 内置浏览器面板使用 <webview>。这里统一加固默认 webPreferences：
+		// 强制禁用 nodeIntegration、保持 contextIsolation，避免任何登录页面
+		// 通过我们的应用拿到 Node 能力。partition 仍由 <webview> 自己声明。
+		this.mainWindow.webContents.on(
+			"will-attach-webview",
+			(_event, webPreferences, _params) => {
+				delete webPreferences.preload;
+				webPreferences.nodeIntegration = false;
+				webPreferences.contextIsolation = true;
+				webPreferences.sandbox = true;
+			},
+		);
+
+		// 当一个 <webview> 真正 attach 上来后，给它的 webContents 注册：
+		// 1) `setWindowOpenHandler`：拦截所有 target=_blank / window.open 请求，
+		//    转发给渲染进程（apps/browser 会在主面板打开一个新 tab）。
+		//    这是 Electron 22+ 必须的 API；旧的 `new-window` 事件已被移除，
+		//    没有这个 handler 时弹窗会被静默吞掉，看起来就像「点链接没反应」。
+		// 2) `did-create-window`：兜底防御。理论上 setWindowOpenHandler 返回
+		//    `deny` 后不会再 create-window，但 Electron 在某些 PDF / OAuth
+		//    场景仍会创建窗口；强制关掉以免出现游离的小窗口。
+		this.mainWindow.webContents.on(
+			"did-attach-webview",
+			(_event, webContents) => {
+				logger.info(
+					`[browser] webview attached, registering setWindowOpenHandler (id=${webContents.id})`,
+				);
+				webContents.setWindowOpenHandler((details) => {
+					const target = details.url;
+					logger.info(
+						`[browser] window.open intercepted: url=${target} disposition=${details.disposition}`,
+					);
+					if (
+						target &&
+						(target.startsWith("http://") ||
+							target.startsWith("https://"))
+					) {
+						this.mainWindow?.webContents.send(
+							"browser:open-in-new-tab",
+							target,
+						);
+					}
+					return { action: "deny" };
+				});
+
+			},
+		);
 
 		// 监听页面加载完成，检查 preload 脚本是否正确加载
 		this.mainWindow.webContents.once("did-finish-load", () => {
@@ -164,9 +279,20 @@ export class WindowManager {
 				});
 		});
 
+		// Windows 无边框模式：监听最大化/还原事件，通知渲染进程更新窗口控制按钮图标
+		if (isWin) {
+			this.mainWindow.on("maximize", () => {
+				this.mainWindow?.webContents.send("window-maximize-changed", true);
+			});
+			this.mainWindow.on("unmaximize", () => {
+				this.mainWindow?.webContents.send("window-maximize-changed", false);
+			});
+		}
+
 		// 设置 ready-to-show 事件监听器
 		this.mainWindow.once("ready-to-show", () => {
 			if (this.mainWindow) {
+				this.mainWindow.maximize();
 				this.mainWindow.show();
 				logger.info("Window is ready to show");
 			}
@@ -190,7 +316,19 @@ export class WindowManager {
 			}
 		});
 
-		// 窗口关闭
+		// 拦截关闭：默认只 hide 到托盘，不让窗口真的销毁。
+		// 只有当 isQuitting=true（由 app.before-quit 触发）时才放行真正 close。
+		this.mainWindow.on("close", (event) => {
+			if (this.isQuitting) {
+				return;
+			}
+			event.preventDefault();
+			if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+				this.mainWindow.hide();
+				logger.info("Window hidden to tray (close intercepted)");
+			}
+		});
+
 		this.mainWindow.on("closed", () => {
 			logger.info("Window closed");
 			this.mainWindow = null;
@@ -199,7 +337,18 @@ export class WindowManager {
 		// 处理窗口加载失败
 		this.mainWindow.webContents.on(
 			"did-fail-load",
-			(_event, errorCode, errorDescription) => {
+			(_event, errorCode, errorDescription, _validatedURL, isMainFrame) => {
+				// errorCode === -3 是 net::ERR_ABORTED：上一次 loadURL 还没加载完
+				// 就被新的 loadURL 打断（启动时的 loading data: url → 真实页面就是
+				// 典型场景）。子 frame 失败也不必当成主流程错误。这两种情况降级
+				// 为 info 日志，避免误导排障。
+				if (errorCode === -3 || !isMainFrame) {
+					logger.info(
+						`Window load aborted (benign): ${errorCode} - ${errorDescription}`,
+					);
+					return;
+				}
+
 				const errorMsg = `Window failed to load: ${errorCode} - ${errorDescription}`;
 				logger.error(errorMsg);
 				console.error(errorMsg);
@@ -217,6 +366,11 @@ export class WindowManager {
 		// 处理渲染进程崩溃
 		this.mainWindow.webContents.on("render-process-gone", (_event, details) => {
 			const errorMsg = `Render process crashed: ${details.reason} (exit code: ${details.exitCode})`;
+			if (details.reason === "clean-exit") {
+				// clean-exit 是正常退出（exit code 0），不是真正崩溃，不弹对话框
+				logger.info(errorMsg);
+				return;
+			}
 			logger.fatal(errorMsg);
 			console.error(errorMsg);
 
@@ -288,7 +442,7 @@ export class WindowManager {
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>FreeTodo 加载中</title>
+    <title>UniCone Agent 加载中</title>
     <style>
       html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #0f1115; color: #e5e7eb; font-family: "Segoe UI", Arial, sans-serif; }
       .wrap { display: flex; align-items: center; justify-content: center; height: 100%; flex-direction: column; gap: 14px; }
@@ -301,7 +455,7 @@ export class WindowManager {
   <body>
     <div class="wrap">
       <div class="spinner"></div>
-      <div class="logo">FreeTodo</div>
+      <div class="logo">UniCone Agent</div>
       <div class="hint">正在启动服务...</div>
     </div>
   </body>
@@ -312,15 +466,30 @@ export class WindowManager {
 
 	/**
 	 * 聚焦窗口
-	 * 如果窗口最小化则恢复，然后聚焦
+	 * 如果窗口最小化则恢复；如果窗口被 hide 到托盘则重新 show；最后聚焦
 	 */
 	focus(): void {
 		if (this.mainWindow) {
 			if (this.mainWindow.isMinimized()) {
 				this.mainWindow.restore();
 			}
+			if (!this.mainWindow.isVisible()) {
+				this.mainWindow.show();
+			}
 			this.mainWindow.focus();
 		}
+	}
+
+	/**
+	 * 标记是否处于真正退出状态。
+	 *
+	 * main.ts 在 `app.before-quit` 中调用本方法把它置 true，之后窗口的
+	 * close 事件就不会再被拦截，能正常销毁。任何走 `app.quit()` 的路径
+	 * （托盘退出菜单、Ctrl+C、系统关机）都会经过 before-quit，所以这里
+	 * 不需要每个调用方各自处理。
+	 */
+	setQuitting(quitting: boolean): void {
+		this.isQuitting = quitting;
 	}
 
 	/**
