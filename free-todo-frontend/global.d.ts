@@ -136,6 +136,20 @@ declare global {
 		 */
 		onIslandAnchorUpdate: (callback: (data: { anchor: 'top' | 'bottom' | null; y: number }) => void) => () => void;
 
+		// ========== Popup 悬浮窗相关 API ==========
+
+			/** 通知 Electron 弹窗 React 已挂载，可以接收 AI 消息 */
+			popupReady?: () => void;
+
+			/** 关闭当前弹窗窗口 */
+			popupClose?: () => void;
+
+			/** 调整弹窗窗口大小 */
+			popupResize?: (width: number, height: number) => void;
+
+			/** 监听主进程推送的 AI 主动消息 */
+			onPopupAiMessage?: (callback: (payload: { message: string; sessionId: string | null }) => void) => () => void;
+
 		// ========== Future Extensions ==========
 
 			/**
