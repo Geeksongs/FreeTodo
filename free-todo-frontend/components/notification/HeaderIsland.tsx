@@ -144,72 +144,61 @@ export function HeaderIsland() {
 		return msg;
 	};
 
-	// 同意 draft todo
-	const handleAccept = async (
+	// 同意 draft todo — 立即关闭通知，API 在后台执行
+	const handleAccept = (
 		todoId: number | undefined,
 		e: React.MouseEvent,
 	) => {
 		e.stopPropagation();
-		if (!todoId || isProcessing) return;
+		if (!todoId) return;
 
-		try {
-			await updateTodoMutation.mutateAsync({
-				id: todoId,
-				input: { status: "active" },
-			});
-			toastSuccess(t("acceptSuccess"));
-			removeNotificationsBySource("draft-todos");
-			setExpanded(false);
-		} catch (error) {
-			const kind = classifyError(error);
-			if (kind === "not_found") {
-				removeNotificationsBySource("draft-todos");
-				setExpanded(false);
-				return;
-			}
-			if (kind === "network") {
-				toastError("后端服务器暂时繁忙，请稍后再试");
-				return;
-			}
-			toastError(t("acceptFailed", { error: kind }));
-		}
+		removeNotificationsBySource("draft-todos");
+		setExpanded(false);
+
+		updateTodoMutation.mutate(
+			{ id: todoId, input: { status: "active" } },
+			{
+				onSuccess: () => toastSuccess(t("acceptSuccess")),
+				onError: (error) => {
+					const kind = classifyError(error);
+					if (kind === "not_found") return;
+					toastError(kind === "network" ? "后端服务器暂时繁忙，请稍后再试" : t("acceptFailed", { error: kind }));
+				},
+			},
+		);
 	};
 
-	// 拒绝 draft todo
-	const handleReject = async (
+	// 拒绝 draft todo — 立即关闭通知，API 在后台执行
+	const handleReject = (
 		todoId: number | undefined,
 		e: React.MouseEvent,
 		reason?: string,
 	) => {
 		e.stopPropagation();
-		if (!todoId || isProcessing) return;
+		if (!todoId) return;
 
-		try {
-			await updateTodoMutation.mutateAsync({
+		setRejectReason((prev) => { const n = { ...prev }; delete n[String(todoId)]; return n; });
+		setShowRejectReason((prev) => { const n = { ...prev }; delete n[String(todoId)]; return n; });
+		removeNotificationsBySource("draft-todos");
+		setExpanded(false);
+
+		updateTodoMutation.mutate(
+			{
 				id: todoId,
 				input: {
 					status: "canceled",
 					...(reason?.trim() ? { rejectionReason: reason.trim() } : {}),
 				},
-			});
-			toastSuccess(t("rejectSuccess"));
-			setRejectReason((prev) => { const n = { ...prev }; delete n[String(todoId)]; return n; });
-			setShowRejectReason((prev) => { const n = { ...prev }; delete n[String(todoId)]; return n; });
-			removeNotificationsBySource("draft-todos");
-			setExpanded(false);
-		} catch (error) {
-			const kind = classifyError(error);
-			if (kind === "not_found") {
-				removeNotificationsBySource("draft-todos");
-				setExpanded(false);
-				return;
-			}
-			if (kind === "network") {
-				toastError("后端服务器暂时繁忙，请稍后再试");
-				return;
-			}
-			toastError(t("rejectFailed", { error: kind }));
-		}
+			},
+			{
+				onSuccess: () => toastSuccess(t("rejectSuccess")),
+				onError: (error) => {
+					const kind = classifyError(error);
+					if (kind === "not_found") return;
+					toastError(kind === "network" ? "后端服务器暂时繁忙，请稍后再试" : t("rejectFailed", { error: kind }));
+				},
+			},
+		);
 	};
 
 	return (
@@ -236,7 +225,8 @@ export function HeaderIsland() {
 					// 有通知时显示通知内容
 					<motion.div
 						onClick={() => {
-							if (!isExpanded && isLlmConfigNotification) {
+							// 多条通知时始终展开列表，让用户可以逐个操作
+							if (!isExpanded && isLlmConfigNotification && notificationCount === 1) {
 								openSettings();
 								return;
 							}
@@ -254,7 +244,7 @@ export function HeaderIsland() {
 						onKeyDown={(e) => {
 							if (e.key === "Enter" || e.key === " ") {
 								e.preventDefault();
-								if (!isExpanded && isLlmConfigNotification) {
+								if (!isExpanded && isLlmConfigNotification && notificationCount === 1) {
 									openSettings();
 									return;
 								}
