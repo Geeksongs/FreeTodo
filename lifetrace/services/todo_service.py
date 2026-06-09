@@ -3,6 +3,7 @@
 处理 Todo 相关的业务逻辑，与数据访问层解耦。
 """
 
+import threading
 from typing import Any
 
 from fastapi import HTTPException
@@ -139,8 +140,9 @@ class TodoService:
 
     def update_todo(self, todo_id: int, data: TodoUpdate) -> TodoResponse:  # noqa: C901, PLR0912, PLR0915
         """更新 Todo"""
-        # 检查是否存在
-        if not self.repository.get_by_id(todo_id):
+        # 一次读取：存在检查 + 获取 existing 合并为一次调用
+        existing = self.repository.get_by_id(todo_id)
+        if not existing:
             raise HTTPException(status_code=404, detail="todo 不存在")
 
         # 提取有效字段（只更新请求中携带的字段）
@@ -150,7 +152,6 @@ class TodoService:
             or set()
         )
         kwargs = {field: getattr(data, field) for field in fields_set}
-        existing = self.repository.get_by_id(todo_id)
         item_type = _normalize_item_type(
             kwargs.get("item_type") or (existing.get("item_type") if existing else None)
         )
@@ -244,10 +245,13 @@ class TodoService:
 
         todo = self.get_todo(todo_id)
         if schedule_fields.intersection(fields_set):
-            try:
-                refresh_todo_reminders(todo)
-            except Exception as e:
-                logger.warning(f"更新待办后同步提醒失败: {e}")
+            _todo_snapshot = todo
+            def _refresh() -> None:
+                try:
+                    refresh_todo_reminders(_todo_snapshot)
+                except Exception as e:
+                    logger.warning(f"更新待办后同步提醒失败: {e}")
+            threading.Thread(target=_refresh, daemon=True).start()
         return todo
 
     def delete_todo(self, todo_id: int) -> None:
