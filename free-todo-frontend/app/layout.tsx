@@ -4,6 +4,7 @@ import { getLocale, getMessages } from "next-intl/server";
 import { ThemeProvider } from "@/components/common/theme/ThemeProvider";
 import { AudioRecordingInit } from "@/components/common/ui/AudioRecordingInit";
 import { BackendReadyGate } from "@/components/common/ui/BackendReadyGate";
+import { LiveTranscriptionFloat } from "@/components/common/ui/LiveTranscriptionFloat";
 import { CapabilitiesSync } from "@/components/common/ui/CapabilitiesSync";
 import { DockTriggerZone } from "@/components/common/ui/DockTriggerZone";
 import { LocaleSync } from "@/components/common/ui/LocaleSync";
@@ -40,6 +41,7 @@ export default async function RootLayout({ children }: RootLayoutProps) {
 						<DockTriggerZone />
 						<ThemeProvider>
 							<BackendReadyGate>{children}</BackendReadyGate>
+							<LiveTranscriptionFloat />
 						</ThemeProvider>
 					</NextIntlClientProvider>
 				</QueryProvider>

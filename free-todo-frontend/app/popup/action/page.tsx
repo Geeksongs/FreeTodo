@@ -2,7 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { unwrapApiData } from "@/lib/api/fetcher";
-import { listTodosApiTodosGet } from "@/lib/generated/todos/todos";
+import {
+	getTodoApiTodosTodoIdGet,
+	listTodosApiTodosGet,
+} from "@/lib/generated/todos/todos";
 import { useUpdateTodo } from "@/lib/query";
 
 interface DraftTodo {
@@ -19,26 +22,84 @@ declare global {
 	}
 }
 
+/** Parse `|tid:{id}` suffix embedded by port_discovery.trigger_popup */
+function parseTodoIdFromMessage(message: string): {
+	title: string;
+	todoId: number | null;
+} {
+	const idx = message.lastIndexOf("|tid:");
+	if (idx === -1) return { title: message, todoId: null };
+	const todoId = parseInt(message.slice(idx + 5), 10);
+	const title = message.slice(0, idx);
+	return { title, todoId: Number.isNaN(todoId) ? null : todoId };
+}
+
 export default function PopupActionPage() {
 	const [draftTodo, setDraftTodo] = useState<DraftTodo | null>(null);
 	const [displayName, setDisplayName] = useState<string>("");
 	const [showNote, setShowNote] = useState<"accept" | "reject" | null>(null);
 	const [note, setNote] = useState("");
+	const [loading, setLoading] = useState(false);
 	const updateTodoMutation = useUpdateTodo();
-	const fetchedRef = useRef(false);
+	// Track the todo_id we're currently showing so we don't re-fetch unnecessarily
+	const currentTodoIdRef = useRef<number | null>(null);
+
+	const fetchTodoById = async (id: number) => {
+		try {
+			const result = await getTodoApiTodosTodoIdGet(id);
+			const data = unwrapApiData<DraftTodo>(result);
+			if (data) {
+				setDraftTodo(data);
+				if (!displayName || displayName !== data.name) {
+					setDisplayName(data.name);
+				}
+			}
+		} catch (e) {
+			console.warn("[PopupAction] Failed to fetch todo by id:", e);
+		}
+	};
 
 	const fetchLatestDraftTodo = async () => {
-		if (fetchedRef.current) return;
-		fetchedRef.current = true;
 		try {
-			const result = await listTodosApiTodosGet({ status: "draft", limit: 1 });
+			const result = await listTodosApiTodosGet({
+				status: "draft",
+				limit: 1,
+			});
 			const data = unwrapApiData<{ todos: DraftTodo[] }>(result);
 			if (data?.todos?.[0]) {
 				setDraftTodo(data.todos[0]);
-				setDisplayName(data.todos[0].name);
+				currentTodoIdRef.current = data.todos[0].id;
+				if (!displayName) setDisplayName(data.todos[0].name);
 			}
 		} catch (e) {
 			console.warn("[PopupAction] Failed to fetch draft todo:", e);
+		}
+	};
+
+	const handleIncomingMessage = async (rawMessage: string) => {
+		const { title, todoId } = parseTodoIdFromMessage(rawMessage);
+
+		// Extract display name from "发现新待办：{title}" prefix
+		const extracted = title.replace(/^发现新待办：/, "").trim();
+		if (extracted) setDisplayName(extracted);
+
+		// Reset note state for fresh display
+		setShowNote(null);
+		setNote("");
+
+		// If we already have this exact todo loaded, skip re-fetch
+		if (todoId !== null && todoId === currentTodoIdRef.current) return;
+
+		setLoading(true);
+		currentTodoIdRef.current = todoId;
+		try {
+			if (todoId !== null) {
+				await fetchTodoById(todoId);
+			} else {
+				await fetchLatestDraftTodo();
+			}
+		} finally {
+			setLoading(false);
 		}
 	};
 
@@ -48,17 +109,17 @@ export default function PopupActionPage() {
 
 		// Register global handler for Electron-pushed messages
 		window.__popupHandleProactiveMessage = ({ message }) => {
-			const extracted = message.replace(/^发现新待办：/, "").trim();
-			if (extracted) setDisplayName(extracted);
-			fetchLatestDraftTodo();
+			handleIncomingMessage(message);
 		};
 
-		// Also fetch immediately (handles case where message arrived before handler)
-		fetchLatestDraftTodo();
+		// Also fetch on mount (handles case where popup was hidden and reshown)
+		setLoading(true);
+		fetchLatestDraftTodo().finally(() => setLoading(false));
 
 		return () => {
 			window.__popupHandleProactiveMessage = undefined;
 		};
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
 	const handleClose = () => {
@@ -81,6 +142,12 @@ export default function PopupActionPage() {
 						...(note.trim() ? { rejectionReason: note.trim() } : {}),
 					};
 		updateTodoMutation.mutate({ id: draftTodo.id, input });
+		// Reset so next popup starts fresh
+		currentTodoIdRef.current = null;
+		setDraftTodo(null);
+		setDisplayName("");
+		setShowNote(null);
+		setNote("");
 		handleClose();
 	};
 
@@ -96,7 +163,7 @@ export default function PopupActionPage() {
 							发现新待办
 						</p>
 						<p className="text-sm font-semibold text-foreground leading-snug break-words">
-							{todoName}
+							{loading ? "加载中…" : todoName}
 						</p>
 					</div>
 					<button

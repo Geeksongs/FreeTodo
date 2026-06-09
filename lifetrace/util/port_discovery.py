@@ -47,11 +47,13 @@ def get_popup_trigger_url() -> str:
     return f"http://127.0.0.1:{port}/trigger"
 
 
-def trigger_popup(message: str, session_id: str | None = None) -> bool:
+def trigger_popup(message: str, session_id: str | None = None, todo_id: int | None = None) -> bool:
     """向 Electron 主进程的 PopupTriggerServer 发送触发请求，显示悬浮聊天窗口。"""
     import urllib.request
     url = get_popup_trigger_url()
-    payload: dict = {"message": message}
+    # 将 todo_id 嵌入 message 尾部（|tid:N），前端可解析，无需 Electron 层改动
+    full_message = message if todo_id is None else f"{message}|tid:{todo_id}"
+    payload: dict = {"message": full_message}
     if session_id:
         payload["session_id"] = session_id
     body = json.dumps(payload).encode("utf-8")

@@ -425,7 +425,7 @@ def _create_draft_todo(todo_data: dict[str, Any]) -> dict[str, Any] | None:
         logger.info(f"创建 draft 待办: {todo_id} - {title}")
         try:
             from lifetrace.util.port_discovery import trigger_popup
-            trigger_popup(f"发现新待办：{title}")
+            trigger_popup(f"发现新待办：{title}", todo_id=todo_id)
         except Exception:
             pass
         return {
