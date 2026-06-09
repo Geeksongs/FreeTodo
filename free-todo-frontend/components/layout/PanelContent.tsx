@@ -6,6 +6,7 @@ import {
 	PanelHeader,
 	PanelPositionProvider,
 } from "@/components/common/layout/PanelHeader";
+import { PanelErrorBoundary } from "@/components/common/ui/PanelErrorBoundary";
 import type { PanelPosition } from "@/lib/config/panel-config";
 import {
 	getPanelLazyComponent,
@@ -72,9 +73,11 @@ export function PanelContent({ position }: PanelContentProps) {
 	if (LazyPanel) {
 		return (
 			<PanelPositionProvider position={position}>
-				<Suspense fallback={placeholderView}>
-					<LazyPanel />
-				</Suspense>
+				<PanelErrorBoundary fallbackLabel={label || "面板加载出错"}>
+					<Suspense fallback={placeholderView}>
+						<LazyPanel />
+					</Suspense>
+				</PanelErrorBoundary>
 			</PanelPositionProvider>
 		);
 	}
