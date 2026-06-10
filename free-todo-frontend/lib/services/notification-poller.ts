@@ -17,6 +17,35 @@ interface NotificationResponse {
 	todoId?: number;
 }
 
+const PROCESSED_DRAFT_TODO_IDS_KEY = "freetodo.processedDraftTodoIds";
+
+function readProcessedDraftTodoIds(): Set<number> {
+	if (typeof window === "undefined") return new Set();
+	try {
+		const raw = window.localStorage.getItem(PROCESSED_DRAFT_TODO_IDS_KEY);
+		const ids = raw ? JSON.parse(raw) : [];
+		return new Set(
+			Array.isArray(ids)
+				? ids.map((id) => Number(id)).filter((id) => Number.isFinite(id))
+				: [],
+		);
+	} catch {
+		return new Set();
+	}
+}
+
+function writeProcessedDraftTodoIds(ids: Set<number>): void {
+	if (typeof window === "undefined") return;
+	const bounded = Array.from(ids).slice(-500);
+	window.localStorage.setItem(PROCESSED_DRAFT_TODO_IDS_KEY, JSON.stringify(bounded));
+}
+
+export function markDraftTodoNotificationProcessed(todoId: number): void {
+	const ids = readProcessedDraftTodoIds();
+	ids.add(todoId);
+	writeProcessedDraftTodoIds(ids);
+}
+
 class NotificationPoller {
 	private timers: Map<string, NodeJS.Timeout> = new Map();
 	private isPageVisible: boolean = true;
@@ -154,7 +183,12 @@ class NotificationPoller {
 			});
 			const data = unwrapApiData<TodoListResponse>(result);
 			// 过滤掉用户已处理（accept/reject）的 todo，避免写入完成前通知重现
-			const todos = (data?.todos ?? []).filter((t) => !this.processedTodoIds.has(t.id));
+			const processedDraftTodoIds = readProcessedDraftTodoIds();
+			const todos = (data?.todos ?? []).filter(
+				(todo) =>
+					!this.processedTodoIds.has(todo.id) &&
+					!processedDraftTodoIds.has(todo.id),
+			);
 
 			const store = useNotificationStore.getState();
 			const current = store.notifications.find(

@@ -87,13 +87,16 @@ jobs:
     name: 自动待办检测 # 任务显示名称（中文）
     enabled: false # 是否启用自动待办检测（默认关闭，需用户手动开启）
     params:
+      min_confidence: 0.75 # 自动创建 draft 的最低置信度，降低误报
+      duplicate_window_hours: 72 # 在该时间窗口内，与已接受/已拒绝/仍待确认的自动提取项去重
+      creation_cooldown_seconds: 30 # 成功创建 draft 后的冷却时间，避免同一聊天片段连环提示
       whitelist:
         apps: ['微信', 'WeChat', '飞书', 'Feishu', 'Lark', '钉钉', 'DingTalk'] # 应用白名单，只有这些应用的截图才会触发自动待办检测
   todo_recorder:
     id: todo_recorder # 任务ID
     name: '屏幕录制（Todo生成）' # 任务显示名称（中文）
     enabled: false # 是否启用 Todo 专用录制（默认关闭，与 auto_todo_detection 联动）
-    interval: 5 # 截图间隔（秒），默认5秒
+    interval: 15 # 截图间隔（秒），降低主动提示频率
     params:
       # 白名单应用从 auto_todo_detection.params.whitelist.apps 读取，无需重复配置
       deduplicate: true # 启用截图去重
@@ -142,7 +145,7 @@ jobs:
     id: proactive_ocr # 任务ID
     name: 主动OCR # 任务显示名称（中文）
     enabled: false # 是否启用主动OCR任务（默认关闭，需用户手动开启，仅Windows）
-    interval: 1.0 # 检测间隔（秒），默认1秒
+    interval: 5.0 # 检测间隔（秒），降低主动OCR提示频率
     params:
       apps: ["wechat", "feishu"] # 目标应用列表
       use_roi: true # 是否使用ROI裁切加速（只识别聊天区域）

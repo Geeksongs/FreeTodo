@@ -77,6 +77,8 @@ mac:
   icon: public/logo.png
   category: public.app-category.productivity
   artifactName: '${productName}-${version}-mac-${arch}.${ext}'
+  extendInfo:
+    NSMicrophoneUsageDescription: FreeTodo needs microphone access to record and transcribe audio for your timeline.
 
 dmg:
   contents:

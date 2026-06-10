@@ -14,7 +14,7 @@ if (process.platform === "win32") {
 }
 
 import path from "node:path";
-import { app, dialog, ipcMain } from "electron";
+import { app, dialog, ipcMain, session, systemPreferences } from "electron";
 import { BackendServer } from "./backend-server";
 import { cancelBootstrap } from "./bootstrap-control";
 import { emitComplete, emitStatus } from "./bootstrap-status";
@@ -210,6 +210,7 @@ if (!gotTheLock) {
 
 	// 应用准备就绪后启动
 	app.whenReady().then(async () => {
+		await setupMediaPermissions();
 		if (app.isPackaged) {
 			const backendRuntime = getBackendRuntime();
 			if (backendRuntime === "script") {
@@ -232,6 +233,32 @@ if (!gotTheLock) {
 		trayManager = managers.trayManager;
 		shortcutManager = managers.shortcutManager;
 	});
+}
+
+async function setupMediaPermissions(): Promise<void> {
+	session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+		const permissionName = String(permission);
+		callback(permissionName === "media" || permissionName === "microphone");
+	});
+
+	session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
+		const permissionName = String(permission);
+		return permissionName === "media" || permissionName === "microphone";
+	});
+
+	if (process.platform !== "darwin") {
+		return;
+	}
+
+	try {
+		await systemPreferences.askForMediaAccess("microphone");
+	} catch (error) {
+		logger.warn(
+			`Failed to request microphone access: ${
+				error instanceof Error ? error.message : String(error)
+			}`,
+		);
+	}
 }
 
 /**

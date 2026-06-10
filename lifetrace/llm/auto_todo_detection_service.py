@@ -4,9 +4,15 @@
 
 import json
 import re
+import time
 from datetime import datetime
 from typing import Any
 
+from lifetrace.llm.auto_todo_dedup import (
+    append_auto_todo_fingerprint,
+    build_auto_todo_fingerprint,
+    is_duplicate_auto_todo,
+)
 from lifetrace.llm.llm_client import LLMClient
 from lifetrace.storage import screenshot_mgr, todo_mgr
 from lifetrace.util.logging_config import get_logger
@@ -42,12 +48,31 @@ def get_whitelist_apps() -> list[str]:
 TODO_EXTRACTION_WHITELIST_APPS = get_whitelist_apps()
 
 
+def _safe_confidence(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 class AutoTodoDetectionService:
     """自动待办检测服务"""
 
     def __init__(self):
         """初始化服务"""
         self.llm_client = LLMClient()
+        self.min_confidence = float(
+            settings.get("jobs.auto_todo_detection.params.min_confidence", 0.75)
+        )
+        self.duplicate_window_hours = int(
+            settings.get("jobs.auto_todo_detection.params.duplicate_window_hours", 72)
+        )
+        self.creation_cooldown_seconds = int(
+            settings.get("jobs.auto_todo_detection.params.creation_cooldown_seconds", 30)
+        )
+        self._last_created_at = 0.0
 
     def is_whitelist_app(self, app_name: str) -> bool:
         """判断是否为白名单应用
@@ -92,9 +117,8 @@ class AutoTodoDetectionService:
                 logger.debug(f"截图 {screenshot_id} 的应用 {app_name} 不在白名单中，跳过检测")
                 return {"created_count": 0, "todos": []}
 
-            # 获取所有active和draft状态的待办
-            existing_todos = todo_mgr.list_todos(limit=1000, status="active")
-            existing_todos += todo_mgr.list_todos(limit=1000, status="draft")
+            # 获取所有状态的待办，用于避免已接受/已拒绝的提取项再次提示。
+            existing_todos = todo_mgr.list_todos(limit=1000)
 
             logger.info(
                 f"开始检测截图 {screenshot_id} 的待办事项，已有待办数量: {len(existing_todos)}"
@@ -118,6 +142,7 @@ class AutoTodoDetectionService:
                 screenshot_id=screenshot_id,
                 app_name=app_name or "",
                 window_title=window_title,
+                existing_todos=existing_todos,
             )
 
             logger.info(
@@ -278,11 +303,34 @@ class AutoTodoDetectionService:
         screenshot_id: int,
         app_name: str,
         window_title: str,
+        existing_todos: list[dict[str, Any]],
     ) -> dict[str, Any] | None:
         """创建单个draft状态的todo"""
         title = todo_data.get("title", "").strip()
         if not title:
             logger.warning("跳过标题为空的待办")
+            return None
+
+        confidence = _safe_confidence(todo_data.get("confidence"))
+        if confidence is not None and confidence < self.min_confidence:
+            logger.info(
+                "跳过低置信度自动待办: confidence=%s, min=%s, title=%s",
+                confidence,
+                self.min_confidence,
+                title,
+            )
+            return None
+
+        if time.monotonic() - self._last_created_at < self.creation_cooldown_seconds:
+            logger.info("自动待办创建冷却中，跳过: %s", title)
+            return None
+
+        if is_duplicate_auto_todo(
+            todo_data,
+            existing_todos,
+            window_hours=self.duplicate_window_hours,
+        ):
+            logger.info("跳过重复自动待办: %s", title)
             return None
 
         description = todo_data.get("description")
@@ -291,12 +339,13 @@ class AutoTodoDetectionService:
 
         source_text = todo_data.get("source_text", "")
         time_info = todo_data.get("time_info", {})
-        confidence = todo_data.get("confidence")
 
         scheduled_time = self._calculate_todo_scheduled_time(time_info)
         user_notes = self._build_user_notes(
             screenshot_id, app_name, window_title, source_text, time_info, confidence
         )
+        fingerprint = build_auto_todo_fingerprint(todo_data)
+        user_notes = append_auto_todo_fingerprint(user_notes, fingerprint)
 
         todo_id = todo_mgr.create_todo(
             name=title,
@@ -309,6 +358,7 @@ class AutoTodoDetectionService:
         )
 
         if todo_id:
+            self._last_created_at = time.monotonic()
             logger.info(f"创建draft待办: {todo_id} - {title}")
             try:
                 from lifetrace.util.port_discovery import trigger_popup
@@ -330,6 +380,7 @@ class AutoTodoDetectionService:
         screenshot_id: int,
         app_name: str,
         window_title: str,
+        existing_todos: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         """
         创建draft状态的todo
@@ -345,15 +396,35 @@ class AutoTodoDetectionService:
         """
         created_todos = []
         created_count = 0
+        existing_todos = existing_todos or todo_mgr.list_todos(limit=1000)
 
         for todo_data in todos:
             try:
                 result = self._create_single_draft_todo(
-                    todo_data, screenshot_id, app_name, window_title
+                    todo_data, screenshot_id, app_name, window_title, existing_todos
                 )
                 if result:
                     created_count += 1
                     created_todos.append(result)
+                    existing_todos.append(
+                        {
+                            "id": result["id"],
+                            "name": result["name"],
+                            "description": todo_data.get("description"),
+                            "user_notes": append_auto_todo_fingerprint(
+                                self._build_user_notes(
+                                    screenshot_id,
+                                    app_name,
+                                    window_title,
+                                    todo_data.get("source_text", ""),
+                                    todo_data.get("time_info", {}),
+                                    _safe_confidence(todo_data.get("confidence")),
+                                ),
+                                build_auto_todo_fingerprint(todo_data),
+                            ),
+                            "created_at": get_utc_now(),
+                        }
+                    )
             except Exception as e:
                 logger.error(f"处理待办数据失败: {e}, 数据: {todo_data}", exc_info=True)
                 continue

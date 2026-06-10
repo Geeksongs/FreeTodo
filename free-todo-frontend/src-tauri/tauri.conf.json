@@ -58,7 +58,10 @@
       "exceptionDomain": "",
       "signingIdentity": null,
       "providerShortName": null,
-      "entitlements": null
+      "entitlements": null,
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "FreeTodo needs microphone access to record and transcribe audio for your timeline."
+      }
     },
     "linux": {
       "deb": {

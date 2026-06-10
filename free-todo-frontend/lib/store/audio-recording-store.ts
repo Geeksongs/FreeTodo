@@ -140,6 +140,44 @@ function getApiBaseUrl(): string {
 	);
 }
 
+async function requestMicrophoneStream(): Promise<MediaStream> {
+	if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+		throw new Error("当前运行环境不支持麦克风录音，请使用桌面版或支持 getUserMedia 的浏览器");
+	}
+
+	try {
+		const permissionStatus = await navigator.permissions?.query({
+			name: "microphone" as PermissionName,
+		});
+		if (permissionStatus?.state === "denied") {
+			throw new Error("麦克风权限已被系统拒绝，请在 macOS 系统设置中允许 FreeTodo 使用麦克风");
+		}
+	} catch (error) {
+		if (error instanceof Error && error.message.includes("麦克风权限已被系统拒绝")) {
+			throw error;
+		}
+	}
+
+	try {
+		return await navigator.mediaDevices.getUserMedia({
+			audio: {
+				echoCancellation: true,
+				noiseSuppression: true,
+				autoGainControl: true,
+			},
+		});
+	} catch (error) {
+		const name = error instanceof DOMException ? error.name : "";
+		if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+			throw new Error("无法打开麦克风：权限被拒绝，请在 macOS 系统设置中允许 FreeTodo 使用麦克风");
+		}
+		if (name === "NotFoundError" || name === "DevicesNotFoundError") {
+			throw new Error("无法打开麦克风：没有检测到可用的输入设备");
+		}
+		throw error instanceof Error ? error : new Error("无法打开麦克风");
+	}
+}
+
 /**
  * 清理录音资源
  * @param segmentTimestamps 段落时间戳数组
@@ -245,7 +283,7 @@ export const useAudioRecordingStore = create<AudioRecordingStore>((set, get) => 
 
 			// 获取麦克风权限
 			console.log("[AudioRecordingStore] 请求麦克风权限...");
-			const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+			const stream = await requestMicrophoneStream();
 			console.log("[AudioRecordingStore] ✅ 麦克风权限已获取");
 			mediaStreamRef = stream;
 

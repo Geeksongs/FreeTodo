@@ -13,6 +13,11 @@ if TYPE_CHECKING:
 else:
     ChatCompletionMessageParam = Any
 
+from lifetrace.llm.auto_todo_dedup import (
+    append_auto_todo_fingerprint,
+    build_auto_todo_fingerprint,
+    is_duplicate_auto_todo,
+)
 from lifetrace.llm.llm_client import LLMClient
 from lifetrace.schemas.floating_capture import (
     CreatedTodo,
@@ -35,6 +40,15 @@ router = APIRouter(prefix="/api/floating-capture", tags=["floating-capture"])
 MIN_RESPONSE_LENGTH_THRESHOLD = 50  # LLM 响应的最小长度阈值
 
 # LLM 客户端单例
+
+
+def _safe_confidence(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 @lru_cache(maxsize=1)
@@ -71,8 +85,7 @@ async def extract_todos_from_capture(request: FloatingCaptureRequest) -> Floatin
 
         # 获取已有待办列表用于去重
         step_start = time.time()
-        existing_todos = todo_mgr.list_todos(limit=1000, status="active")
-        existing_todos += todo_mgr.list_todos(limit=1000, status="draft")
+        existing_todos = todo_mgr.list_todos(limit=1000)
         logger.info(
             f"⏱️ 获取已有待办列表: {time.time() - step_start:.3f}s (共 {len(existing_todos)} 条)"
         )
@@ -121,7 +134,7 @@ async def extract_todos_from_capture(request: FloatingCaptureRequest) -> Floatin
             step_start = time.time()
             for todo_data in extracted_todos:
                 try:
-                    result = _create_draft_todo(todo_data)
+                    result = _create_draft_todo(todo_data, existing_todos)
                     if result:
                         created_count += 1
                         created_todos.append(
@@ -130,6 +143,18 @@ async def extract_todos_from_capture(request: FloatingCaptureRequest) -> Floatin
                                 name=result["name"],
                                 scheduled_time=result.get("scheduled_time"),
                             )
+                        )
+                        existing_todos.append(
+                            {
+                                "id": result["id"],
+                                "name": result["name"],
+                                "description": todo_data.get("description"),
+                                "user_notes": append_auto_todo_fingerprint(
+                                    _build_user_notes(todo_data),
+                                    build_auto_todo_fingerprint(todo_data),
+                                ),
+                                "created_at": get_utc_now(),
+                            }
                         )
                 except Exception as e:
                     logger.error(f"创建待办失败: {e}", exc_info=True)
@@ -369,7 +394,25 @@ def _parse_llm_response(response_text: str) -> list[dict[str, Any]]:
         return []
 
 
-def _create_draft_todo(todo_data: dict[str, Any]) -> dict[str, Any] | None:
+def _build_user_notes(todo_data: dict[str, Any]) -> str:
+    source_text = todo_data.get("source_text", "")
+    time_info = todo_data.get("time_info", {})
+    confidence = _safe_confidence(todo_data.get("confidence"))
+
+    user_notes_parts = ["来源: 悬浮窗截图"]
+    if source_text:
+        user_notes_parts.append(f"来源文本: {source_text}")
+    if time_info and time_info.get("raw_text"):
+        user_notes_parts.append(f"时间: {time_info.get('raw_text')}")
+    if confidence is not None:
+        user_notes_parts.append(f"置信度: {confidence:.0%}")
+    return "\n".join(user_notes_parts)
+
+
+def _create_draft_todo(
+    todo_data: dict[str, Any],
+    existing_todos: list[dict[str, Any]],
+) -> dict[str, Any] | None:
     """
     创建 draft 状态的待办
 
@@ -383,13 +426,18 @@ def _create_draft_todo(todo_data: dict[str, Any]) -> dict[str, Any] | None:
     if not title:
         return None
 
+    duplicate_window_hours = int(
+        settings.get("jobs.auto_todo_detection.params.duplicate_window_hours", 72)
+    )
+    if is_duplicate_auto_todo(todo_data, existing_todos, window_hours=duplicate_window_hours):
+        logger.info("跳过重复悬浮窗待办: %s", title)
+        return None
+
     description = todo_data.get("description")
     if description:
         description = description.strip()
 
-    source_text = todo_data.get("source_text", "")
     time_info = todo_data.get("time_info", {})
-    confidence = todo_data.get("confidence")
 
     # 计算 scheduled_time
     scheduled_time = None
@@ -401,14 +449,8 @@ def _create_draft_todo(todo_data: dict[str, Any]) -> dict[str, Any] | None:
             logger.warning(f"计算 scheduled_time 失败: {e}")
 
     # 构建 user_notes
-    user_notes_parts = ["来源: 悬浮窗截图"]
-    if source_text:
-        user_notes_parts.append(f"来源文本: {source_text}")
-    if time_info and time_info.get("raw_text"):
-        user_notes_parts.append(f"时间: {time_info.get('raw_text')}")
-    if confidence is not None:
-        user_notes_parts.append(f"置信度: {confidence:.0%}")
-    user_notes = "\n".join(user_notes_parts)
+    fingerprint = build_auto_todo_fingerprint(todo_data)
+    user_notes = append_auto_todo_fingerprint(_build_user_notes(todo_data), fingerprint)
 
     # 创建待办
     todo_id = todo_mgr.create_todo(

@@ -7,7 +7,10 @@ import { useEffect, useRef, useState } from "react";
 import { deleteNotificationApiNotificationsNotificationIdDelete } from "@/lib/generated/notifications/notifications";
 import { useOpenSettings } from "@/lib/hooks/useOpenSettings";
 import { useUpdateTodo } from "@/lib/query";
-import { getNotificationPoller } from "@/lib/services/notification-poller";
+import {
+	getNotificationPoller,
+	markDraftTodoNotificationProcessed,
+} from "@/lib/services/notification-poller";
 import { useNotificationStore } from "@/lib/store/notification-store";
 import { toastError, toastSuccess } from "@/lib/toast";
 
@@ -142,6 +145,7 @@ export function HeaderIsland() {
 		setNoteInput((prev) => { const n = { ...prev }; delete n[key]; return n; });
 		// 立即标记为已处理，防止轮询在 API 写入完成前重新弹出通知
 		getNotificationPoller().markTodoProcessed(todoId);
+		markDraftTodoNotificationProcessed(todoId);
 		removeNotificationsBySource("draft-todos");
 		setExpanded(false);
 
