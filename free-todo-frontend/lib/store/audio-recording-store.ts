@@ -128,6 +128,35 @@ let currentIs24x7 = false; // 当前是否为 7×24 模式
 
 // ========== 内部辅助函数 ==========
 
+function formatAudioRecordingError(rawError: unknown): string {
+	const message =
+		rawError instanceof Error
+			? rawError.message
+			: typeof rawError === "string"
+				? rawError
+				: String(rawError || "");
+	const normalized = message.toLowerCase();
+
+	if (
+		message.includes("401") ||
+		normalized.includes("unauthorized") ||
+		normalized.includes("invalid api key") ||
+		normalized.includes("api key")
+	) {
+		return `ASR API Key 无效或未配置，请在「设置 > 开发者与高级 > 音频识别（ASR）配置」中填写正确的阿里云 DashScope API Key，并点击测试配置。\n\n原始错误: ${message}`;
+	}
+
+	if (message.includes("404") || normalized.includes("not found")) {
+		return `ASR WebSocket 地址或模型不存在，请检查音频识别（ASR）配置。\n\n原始错误: ${message}`;
+	}
+
+	if (normalized.includes("websocket") || normalized.includes("connection")) {
+		return `音频转写连接失败，请检查后端服务、ASR WebSocket 地址和网络连接。\n\n原始错误: ${message}`;
+	}
+
+	return message || "音频转写失败，请检查音频识别（ASR）配置";
+}
+
 /**
  * 获取 API 基础 URL
  */
@@ -380,6 +409,25 @@ export const useAudioRecordingStore = create<AudioRecordingStore>((set, get) => 
 							return;
 						}
 
+						if (data.header?.name === "TaskFailed") {
+							const errorMessage = formatAudioRecordingError(
+								data.payload?.error || "音频转写任务失败",
+							);
+							shouldReconnectRef = false;
+							currentIs24x7 = false;
+							cleanupRecordingResources();
+							set({
+								isRecording: false,
+								recordingStartedAt: null,
+								recordingStartedDate: null,
+								lastFinalEndMs: null,
+							});
+							if (currentOnError) {
+								currentOnError(new Error(errorMessage));
+							}
+							return;
+						}
+
 						// 分段保存通知（7×24 模式）
 						if (data.header?.name === "SegmentSaved") {
 							// 通知前端分段已保存，需要重置时间戳和文本
@@ -402,10 +450,11 @@ export const useAudioRecordingStore = create<AudioRecordingStore>((set, get) => 
 					error instanceof Error
 						? error.message
 						: "WebSocket连接错误，请检查后端服务是否运行";
-				console.error("WebSocket error:", errorMessage, error);
+				const formattedErrorMessage = formatAudioRecordingError(errorMessage);
+				console.error("WebSocket error:", formattedErrorMessage, error);
 				set({ isRecording: false });
 				if (currentOnError) {
-					currentOnError(new Error(errorMessage));
+					currentOnError(new Error(formattedErrorMessage));
 				}
 			};
 
@@ -510,7 +559,7 @@ export const useAudioRecordingStore = create<AudioRecordingStore>((set, get) => 
 				});
 
 				if (currentOnError) {
-					currentOnError(new Error(errorMessage));
+					currentOnError(new Error(formatAudioRecordingError(errorMessage)));
 				}
 			};
 
