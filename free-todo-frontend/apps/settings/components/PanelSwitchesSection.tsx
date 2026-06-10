@@ -31,7 +31,7 @@ export function PanelSwitchesSection({
 	const backendDisabledFeatures = useUiStore(
 		(state) => state.backendDisabledFeatures,
 	);
-	const [showDevPanels, setShowDevPanels] = useState(false);
+	const [showDevPanels, setShowDevPanels] = useState(true);
 
 	// 获取所有可用的面板（排除 settings）
 	const availablePanels = ALL_PANEL_FEATURES.filter(

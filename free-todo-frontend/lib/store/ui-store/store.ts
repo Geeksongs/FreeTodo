@@ -173,6 +173,7 @@ export const useUiStore = create<UiStoreState>()(
 				set((state) => {
 					const disabledFeatures = new Set(state.disabledFeatures);
 					const panelFeatureMap = { ...state.panelFeatureMap };
+					const updates: Partial<UiStoreState> = {};
 
 					if (!enabled) {
 						disabledFeatures.add(feature);
@@ -187,10 +188,40 @@ export const useUiStore = create<UiStoreState>()(
 					} else {
 						if (!state.backendDisabledFeatures.includes(feature)) {
 							disabledFeatures.delete(feature);
+
+							const alreadyAssigned = Object.values(panelFeatureMap).includes(feature);
+							if (!alreadyAssigned) {
+								const positions: PanelPosition[] = ["panelA", "panelB", "panelC"];
+								const emptyPosition = positions.find(
+									(position) =>
+										!state.panelPinMap[position] && !panelFeatureMap[position],
+								);
+								const targetPosition =
+									emptyPosition ??
+									(!state.panelPinMap.panelC
+										? "panelC"
+										: positions.find((position) => !state.panelPinMap[position]));
+
+								if (targetPosition) {
+									panelFeatureMap[targetPosition] = feature;
+									switch (targetPosition) {
+										case "panelA":
+											updates.isPanelAOpen = true;
+											break;
+										case "panelB":
+											updates.isPanelBOpen = true;
+											break;
+										case "panelC":
+											updates.isPanelCOpen = true;
+											break;
+									}
+								}
+							}
 						}
 					}
 
 					return {
+						...updates,
 						disabledFeatures: Array.from(disabledFeatures),
 						panelFeatureMap,
 					};

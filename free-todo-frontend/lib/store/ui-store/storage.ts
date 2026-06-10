@@ -237,6 +237,20 @@ export const createUiStoreStorage = () =>
 						}
 					}
 
+					// Repair older persisted states where a panel was enabled but never
+					// assigned to a Dock slot. Users expect enabled panels to appear.
+					if (
+						state.disabledFeatures &&
+						!state.disabledFeatures.includes("audio") &&
+						state.backendDisabledFeatures &&
+						!state.backendDisabledFeatures.includes("audio") &&
+						state.panelFeatureMap &&
+						!Object.values(state.panelFeatureMap).includes("audio")
+					) {
+						state.panelFeatureMap.panelC = "audio";
+						state.isPanelCOpen = true;
+					}
+
 					return JSON.stringify({ state });
 				} catch (e) {
 					console.error("Error loading panel config:", e);
