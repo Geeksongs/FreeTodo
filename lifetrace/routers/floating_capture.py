@@ -3,6 +3,7 @@
 import json
 import re
 import time
+from contextlib import suppress
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, cast
 
@@ -27,6 +28,7 @@ from lifetrace.schemas.floating_capture import (
 )
 from lifetrace.storage import todo_mgr
 from lifetrace.util.logging_config import get_logger
+from lifetrace.util.port_discovery import trigger_popup
 from lifetrace.util.prompt_loader import get_prompt
 from lifetrace.util.settings import settings
 from lifetrace.util.time_parser import calculate_scheduled_time
@@ -465,11 +467,8 @@ def _create_draft_todo(
 
     if todo_id:
         logger.info(f"创建 draft 待办: {todo_id} - {title}")
-        try:
-            from lifetrace.util.port_discovery import trigger_popup
+        with suppress(Exception):
             trigger_popup(f"发现新待办：{title}", todo_id=todo_id)
-        except Exception:
-            pass
         return {
             "id": todo_id,
             "name": title,

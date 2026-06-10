@@ -5,6 +5,7 @@
 import json
 import re
 import time
+from contextlib import suppress
 from datetime import datetime
 from typing import Any
 
@@ -16,6 +17,7 @@ from lifetrace.llm.auto_todo_dedup import (
 from lifetrace.llm.llm_client import LLMClient
 from lifetrace.storage import screenshot_mgr, todo_mgr
 from lifetrace.util.logging_config import get_logger
+from lifetrace.util.port_discovery import trigger_popup
 from lifetrace.util.prompt_loader import get_prompt
 from lifetrace.util.settings import settings
 from lifetrace.util.time_parser import calculate_scheduled_time
@@ -360,11 +362,8 @@ class AutoTodoDetectionService:
         if todo_id:
             self._last_created_at = time.monotonic()
             logger.info(f"创建draft待办: {todo_id} - {title}")
-            try:
-                from lifetrace.util.port_discovery import trigger_popup
+            with suppress(Exception):
                 trigger_popup(f"发现新待办：{title}", todo_id=todo_id)
-            except Exception:
-                pass
             return {
                 "id": todo_id,
                 "name": title,
